@@ -3,12 +3,32 @@ import xml.etree.ElementTree as ET
 from fingerprinter.core.context import ScanContext
 from fingerprinter.core.result import ScanReport, PortInfo
 
+# Scanner metadata
+SCANNER_INFO = {
+    'name': 'nmap',
+    'description': 'Comprehensive network service detection and fingerprinting using nmap',
+    'target_types': ['ip', 'hostname'],
+    'capabilities': [
+        'Service version detection',
+        'OS fingerprinting',
+        'Raw fingerprint capture',
+        'Banner grabbing',
+        'Port scanning'
+    ],
+    'requirements': ['nmap command-line tool']
+}
+
 
 async def scan(ctx: ScanContext, report: ScanReport, log) -> None:
     """
     Perform comprehensive nmap service version scan (-sV) and collect fingerprints.
+    Works with IP addresses and hostnames.
     """
-    log.info(f"Starting nmap service version scan on {ctx.target}")
+    if not ctx.target.is_network_target:
+        log.debug(f"Skipping nmap scan for {ctx.target_type} target")
+        return
+
+    log.info(f"Starting nmap service version scan on {ctx.display_name}")
 
     try:
         # Run nmap with service version detection
@@ -18,9 +38,9 @@ async def scan(ctx: ScanContext, report: ScanReport, log) -> None:
             _parse_nmap_xml(xml_output, report, log)
             if text_output:
                 _parse_raw_fingerprints(text_output, report, log)
-            log.info(f"Nmap scan completed for {ctx.target}")
+            log.info(f"Nmap scan completed for {ctx.display_name}")
         else:
-            log.warning(f"No nmap results for {ctx.target}")
+            log.warning(f"No nmap results for {ctx.display_name}")
 
     except Exception as e:
         log.error(f"Nmap scan failed: {e}")
@@ -50,7 +70,7 @@ async def _run_nmap(ctx: ScanContext, log) -> tuple[str | None, str | None]:
             f"--max-rtt-timeout={int(ctx.timeout * 5000)}ms",  # Higher RTT timeout
             "-v", "-v",  # Double verbose to ensure fingerprints are shown
             "-oX", xml_file,  # XML output to file
-            str(ctx.ip)
+            ctx.target_value
         ]
 
         # Add port specification - scan top 1000 ports by default

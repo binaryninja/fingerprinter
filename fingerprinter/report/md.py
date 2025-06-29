@@ -1,25 +1,303 @@
 from fingerprinter.core.result import ScanReport
+from datetime import datetime
 
 def render_markdown(r: ScanReport) -> str:
-    md = [f"# Scan Report – {r.target}",
-          f"*Started*: {r.started.isoformat()}",
-          f"*Finished*: {r.finished}"]
-    if r.ports:
-        md.append("\n## Open Ports\n")
-        for p in r.ports:
-            banner = f" – _{p.banner[:60]}_" if p.banner else ""
-            md.append(f"* **{p.port}/{p.proto}**{banner}")
-            if p.raw_fingerprint:
-                md.append(f"  \n  **Raw Fingerprint:**")
-                md.append(f"```/dev/null/nmap_fingerprint.txt#L1-10")
-                md.append(f"  {p.raw_fingerprint}")
-                md.append(f"```")
+    """Generate a comprehensive markdown report for any target type."""
+
+    # Header with target information
+    md = [
+        f"# Fingerprint Report",
+        f"**Target**: {r.display_target}",
+        f"**Scan ID**: `{r.scan_id}`",
+        f"**Started**: {r.started.isoformat()}",
+        f"**Finished**: {r.finished.isoformat() if r.finished else 'In Progress'}",
+    ]
+
+    # Add duration if scan is complete
+    if r.finished:
+        duration = (r.finished - r.started).total_seconds()
+        md.append(f"**Duration**: {duration:.1f}s")
+
+    # Add location context
+    if r.location:
+        md.append(f"**Location**: {r.location}")
+
+    # Add context notes
+    if r.context_notes:
+        md.append(f"**Context**: {'; '.join(r.context_notes)}")
+
+    md.append("")  # Empty line
+
+    # Network scan results (for IP/hostname targets)
+    if r.is_network_scan and r.ports:
+        md.append("## 🌐 Network Services")
+        md.append("")
+
+        # Group ports by protocol
+        tcp_ports = [p for p in r.ports if p.proto == 'tcp']
+        udp_ports = [p for p in r.ports if p.proto == 'udp']
+
+        if tcp_ports:
+            md.append("### TCP Ports")
+            md.append("")
+            for p in sorted(tcp_ports, key=lambda x: x.port):
+                _add_port_info(md, p)
+            md.append("")
+
+        if udp_ports:
+            md.append("### UDP Ports")
+            md.append("")
+            for p in sorted(udp_ports, key=lambda x: x.port):
+                _add_port_info(md, p)
+            md.append("")
+
+    # HTTP services
     if r.http:
-        md.append("\n## Web Services\n")
-        for h in r.http:
-            sig = f" ({', '.join(h.signatures)})" if h.signatures else ""
-            md.append(f"* [{h.status}] {h.url} – **{h.title or 'n/a'}**{sig}")
+        md.append("## 🌍 Web Services")
+        md.append("")
+
+        for h in sorted(r.http, key=lambda x: x.url):
+            status_emoji = "✅" if 200 <= h.status < 300 else "⚠️" if 300 <= h.status < 400 else "❌"
+            title_text = h.title or "*No title*"
+            md.append(f"### {status_emoji} [{h.status}] {h.url}")
+            md.append(f"**Title**: {title_text}")
+
+            if h.signatures:
+                md.append(f"**Technologies**: {', '.join(h.signatures)}")
+
+            md.append("")
+
+    # RF spectrum analysis results
+    if r.rf_scans:
+        md.append("## 📡 RF Spectrum Analysis")
+        md.append("")
+
+        total_hot_bins = sum(len(scan.hot_bins) for scan in r.rf_scans)
+        md.append(f"**Summary**: {total_hot_bins} active frequencies detected across {len(r.rf_scans)} frequency ranges")
+        md.append("")
+
+        for rf_scan in r.rf_scans:
+            _add_rf_scan_info(md, rf_scan)
+
+    # Scanner notes and findings
     if r.notes:
-        md.append("\n## Notes\n")
-        md.extend([f"* {line}" for line in r.notes])
+        md.append("## 📝 Scan Notes")
+        md.append("")
+        for note in r.notes:
+            md.append(f"* {note}")
+        md.append("")
+
+    # Raw fingerprints section (for unidentified services)
+    raw_fingerprints = [p for p in r.ports if p.raw_fingerprint] if r.ports else []
+    if raw_fingerprints:
+        md.append("## 🔍 Raw Fingerprints")
+        md.append("")
+        md.append("*The following services could not be identified by nmap. These raw fingerprints can be used for manual analysis or contributing new signatures.*")
+        md.append("")
+
+        for p in raw_fingerprints:
+            md.append(f"### Port {p.port}/{p.proto}")
+            if p.service:
+                md.append(f"**Service**: {p.service}")
+            if p.banner:
+                md.append(f"**Banner**: `{p.banner[:100]}{'...' if len(p.banner) > 100 else ''}`")
+
+            md.append("**Raw Fingerprint**:")
+            md.append("```/dev/null/nmap_fingerprint.txt#L1-5")
+            # Format the fingerprint for better readability
+            fp = p.raw_fingerprint
+            if len(fp) > 500:
+                fp = fp[:500] + "..."
+            md.append(fp)
+            md.append("```")
+            md.append("")
+
+    # Target-specific analysis
+    _add_target_specific_analysis(md, r)
+
+    # Footer with metadata
+    md.append("---")
+    md.append("*Report generated by Fingerprinter*")
+
     return "\n".join(md)
+
+
+def _add_port_info(md: list[str], p) -> None:
+    """Add detailed port information to the markdown report."""
+    # Create port header with service info
+    service_info = []
+    if p.service and p.service != "unknown":
+        service_info.append(p.service)
+    if p.product:
+        service_info.append(p.product)
+    if p.version:
+        service_info.append(f"v{p.version}")
+
+    service_text = " ".join(service_info) if service_info else "Unknown service"
+
+    md.append(f"#### Port {p.port} - {service_text}")
+
+    # Add banner if available
+    if p.banner:
+        banner_preview = p.banner[:100] + "..." if len(p.banner) > 100 else p.banner
+        md.append(f"**Banner**: `{banner_preview}`")
+
+    # Add extra info
+    if p.extrainfo:
+        md.append(f"**Extra Info**: {p.extrainfo}")
+
+    # Add confidence if available
+    if p.confidence:
+        md.append(f"**Confidence**: {p.confidence}/10")
+
+    # Add detection method
+    if p.method:
+        md.append(f"**Detection**: {p.method}")
+
+    md.append("")
+
+
+def _add_rf_scan_info(md: list[str], rf_scan) -> None:
+    """Add RF scan information to the markdown report."""
+    center_freq_mhz = rf_scan.center_freq_hz / 1e6
+    bandwidth_mhz = rf_scan.bandwidth_hz / 1e6
+
+    md.append(f"### 📊 {center_freq_mhz:.1f} MHz ± {bandwidth_mhz/2:.1f} MHz")
+    md.append(f"**Scan Duration**: {rf_scan.scan_duration_sec:.1f}s")
+    md.append(f"**Gain**: {rf_scan.gain_db} dB")
+    md.append(f"**Noise Floor**: {rf_scan.noise_floor_db:.1f} dB")
+    md.append(f"**Detection Threshold**: {rf_scan.detection_threshold_db:.1f} dB")
+    md.append("")
+
+    if rf_scan.hot_bins:
+        md.append("#### 🔥 Active Frequencies")
+        md.append("")
+
+        # Sort by power (strongest first)
+        sorted_bins = sorted(rf_scan.hot_bins, key=lambda x: x.power_db, reverse=True)
+
+        for i, bin in enumerate(sorted_bins[:10], 1):  # Show top 10
+            freq_mhz = bin.frequency_hz / 1e6
+            power_str = f"{bin.power_db:.1f} dB"
+            bandwidth_khz = bin.bandwidth_hz / 1e3
+
+            # Try to identify the frequency
+            freq_desc = _get_frequency_description(bin.frequency_hz)
+
+            md.append(f"{i}. **{freq_mhz:.3f} MHz** - {power_str} ({freq_desc})")
+            md.append(f"   *Bandwidth: {bandwidth_khz:.0f} kHz, Method: {bin.detection_method}*")
+
+        if len(rf_scan.hot_bins) > 10:
+            md.append(f"   *... and {len(rf_scan.hot_bins) - 10} more frequencies*")
+
+        md.append("")
+    else:
+        md.append("**Result**: No significant activity detected")
+        md.append("")
+
+
+def _get_frequency_description(freq_hz: float) -> str:
+    """Get a human-readable description of what might be using a frequency."""
+    freq_mhz = freq_hz / 1e6
+
+    # WiFi channels
+    if 2400 <= freq_mhz <= 2500:
+        if 2412 <= freq_mhz <= 2484:
+            channel = int((freq_mhz - 2412) / 5) + 1
+            if channel <= 13:
+                return f"WiFi Channel {channel}"
+        return "WiFi 2.4GHz"
+
+    if 5150 <= freq_mhz <= 5875:
+        return "WiFi 5GHz"
+
+    # Bluetooth
+    if 2402 <= freq_mhz <= 2480:
+        return "Bluetooth"
+
+    # ISM bands
+    if 433.05 <= freq_mhz <= 434.79:
+        return "433MHz IoT"
+
+    if 863 <= freq_mhz <= 870:
+        return "868MHz IoT (EU)"
+
+    if 902 <= freq_mhz <= 928:
+        return "915MHz IoT (US)"
+
+    # Cellular
+    if 698 <= freq_mhz <= 960:
+        return "Cellular"
+
+    if 1710 <= freq_mhz <= 1990:
+        return "Cellular"
+
+    # Generic
+    if freq_mhz < 30:
+        return "HF"
+    elif freq_mhz < 300:
+        return "VHF"
+    elif freq_mhz < 3000:
+        return "UHF"
+    else:
+        return "Microwave"
+
+
+def _add_target_specific_analysis(md: list[str], r: ScanReport) -> None:
+    """Add target-type specific analysis and recommendations."""
+
+    if r.target_type == 'coordinates':
+        md.append("## 📍 Location Analysis")
+        md.append("")
+        md.append(f"RF spectrum survey conducted at coordinates: `{r.target}`")
+
+        if r.rf_scans:
+            total_activity = sum(len(scan.hot_bins) for scan in r.rf_scans)
+            if total_activity > 10:
+                md.append("**Assessment**: High RF activity environment")
+            elif total_activity > 3:
+                md.append("**Assessment**: Moderate RF activity environment")
+            else:
+                md.append("**Assessment**: Low RF activity environment")
+
+        md.append("")
+
+    elif r.target_type in ['ip', 'hostname']:
+        md.append("## 🖥️ Network Target Analysis")
+        md.append("")
+
+        if r.ports:
+            # Security assessment
+            concerning_ports = [p for p in r.ports if p.port in [21, 22, 23, 53, 135, 139, 445, 1433, 3389]]
+            if concerning_ports:
+                md.append("⚠️ **Security Note**: Found potentially sensitive services:")
+                for p in concerning_ports:
+                    service_name = _get_port_security_note(p.port)
+                    md.append(f"* Port {p.port}/{p.proto} - {service_name}")
+                md.append("")
+
+            # Service summary
+            web_ports = [p for p in r.ports if p.port in [80, 443, 8080, 8443]]
+            if web_ports:
+                md.append("🌐 **Web Services Detected**")
+                md.append("")
+
+        if r.rf_scans:
+            md.append("📡 **RF Environment**: Radio frequency analysis conducted alongside network scanning")
+            md.append("")
+
+
+def _get_port_security_note(port: int) -> str:
+    """Get security-relevant description for common ports."""
+    port_notes = {
+        21: "FTP - File transfer (often unencrypted)",
+        22: "SSH - Secure shell access",
+        23: "Telnet - Unencrypted terminal access",
+        53: "DNS - Domain name resolution",
+        135: "RPC Endpoint Mapper - Windows RPC",
+        139: "NetBIOS Session Service",
+        445: "SMB - File sharing",
+        1433: "MS SQL Server",
+        3389: "RDP - Remote desktop"
+    }
+    return port_notes.get(port, f"Port {port}")

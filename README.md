@@ -1,15 +1,19 @@
 # Fingerprinter
 
-A modular async IP fingerprinting tool with comprehensive service detection and raw fingerprint retention.
+A modular async fingerprinting tool supporting multiple target types including IP addresses, RF spectrum analysis, coordinates, and general identifiers with comprehensive service detection and raw fingerprint retention.
 
 ## Features
 
-- **Multi-Scanner Architecture**: Modular design with ARP, HTTP, nmap, and port scanners
+- **Multi-Target Support**: Network targets (IP, hostname, URL), RF spectrum analysis, coordinates, device identifiers
+- **Multi-Scanner Architecture**: Modular design with ARP, HTTP, nmap, port, and HackRF scanners
+- **Automatic Target Detection**: Intelligent target type detection with manual override options
+- **Context-Aware Scanning**: Location, notes, and environmental context tracking
 - **Raw Fingerprint Retention**: Captures and stores nmap raw fingerprints for unrecognized services
 - **Comprehensive Service Detection**: Deep service identification with version detection
-- **Multiple Output Formats**: JSON data output and markdown reports
+- **RF Spectrum Analysis**: Wide-band frequency scanning and hot bin detection
+- **Multiple Output Formats**: JSON data output and enhanced markdown reports
 - **Async Performance**: Non-blocking concurrent scanning
-- **Port Deduplication**: Intelligent merging of results from multiple scanners
+- **Smart Scanner Selection**: Automatic compatibility-based scanner selection
 
 ## Installation
 
@@ -29,36 +33,53 @@ pip install -e .
 
 - Python 3.9+
 - nmap (for service detection and fingerprinting)
-- Dependencies: rich, psutil, aiohttp, requests, cryptography
+- Dependencies: rich, psutil, aiohttp, requests, cryptography, numpy, scipy
+- Optional: HackRF One SDR device and hackrf command-line tools for RF scanning
 
 ## Usage
 
 ### Basic Scanning
 
 ```bash
-# Basic scan with legal acknowledgment
-python -m fingerprinter --legal-ok <target_ip>
+# Network scanning (traditional)
+python -m fingerprinter --legal-ok 192.168.1.1
+
+# RF spectrum survey
+python -m fingerprinter --legal-ok rf-survey --location 'Home Lab'
+
+# Coordinates-based scanning
+python -m fingerprinter --legal-ok 37.7749,-122.4194 --target-type coordinates
 
 # Verbose output
-python -m fingerprinter --legal-ok <target_ip> -vv
+python -m fingerprinter --legal-ok 192.168.1.1 -vv
 
 # Interactive mode
-python -m fingerprinter --legal-ok <target_ip> --interactive
+python -m fingerprinter --legal-ok rf-survey --interactive --location 'Lab'
 
 # Specific scanners only
-python -m fingerprinter --legal-ok <target_ip> -m nmap -m http
+python -m fingerprinter --legal-ok 192.168.1.1 -m nmap -m http
 
 # Custom JSON output file
-python -m fingerprinter --legal-ok <target_ip> --json-out results.json
+python -m fingerprinter --legal-ok 192.168.1.1 --json-out results.json
+
+# Show usage examples
+python -m fingerprinter examples
 ```
 
 ### Command Line Options
 
-- `target`: IPv4/IPv6 address to scan
+- `target`: Target to scan (IP address, hostname, coordinates, identifier, etc.)
+- `--target-type`: Override automatic target type detection
+- `--location`: Physical location context (e.g., 'Home Lab', 'Office Floor 2')
+- `--note`: Add context notes (can be used multiple times)
 - `--legal-ok`: Required acknowledgment of legal authorization
 - `-m, --module`: Specific scanner modules to run (can be used multiple times)
+- `--exclude-module`: Scanner modules to exclude
 - `--json-out`: Custom path for JSON output file
-- `--interactive`: Enable interactive menu (coming soon)
+- `--no-markdown`: Skip markdown report generation
+- `--interactive`: Enable interactive menu
+- `--timeout`: Scanner timeout in seconds
+- `--quick`: Quick scan mode for faster results
 - `-v, --verbose`: Increase verbosity (use `-vv` for debug output)
 
 ## Scanner Modules
@@ -86,22 +107,38 @@ python -m fingerprinter --legal-ok <target_ip> --json-out results.json
 - **Network Validation**: Only operates on local/private network ranges
 - **Multiple Methods**: Uses both `arp` and `ip neighbor` commands
 
+### 5. HackRF Scanner (RF Spectrum Analysis)
+- **Universal Target Support**: Works with any target type for context (IP, coordinates, identifiers)
+- **Wide Spectrum Scanning**: Covers ISM bands (433MHz, 868MHz, 915MHz) and WiFi (2.4GHz, 5GHz)
+- **Hot Bin Detection**: Identifies active frequency ranges with significant RF activity
+- **Signal Power Analysis**: Measures signal strength and noise floor across frequency bands
+- **Device Fingerprinting**: Detects IoT devices, WiFi networks, Bluetooth activity, and cellular signals
+- **Location-Aware**: Supports coordinate-based and location-context RF surveys
+- **Prerequisites**: Requires HackRF One device and hackrf command-line tools
+
 ## Output Formats
 
 ### JSON Output
 Complete structured data including:
+- **Target information** with type detection and context
+- **Scan metadata** with unique IDs, location, and notes
 - Port information with banners and service details
 - **Raw fingerprints** for unrecognized services
 - HTTP service details with technology signatures
+- **RF scan results** with hot bins and signal analysis
 - Network and OS information
-- Scan metadata and timing
+- Enhanced scan timing and duration
 
 ### Markdown Reports
 Human-readable reports featuring:
-- Open ports with service descriptions
+- **Target-specific formatting** based on scan type
+- **Context information** including location and notes
+- Open ports with detailed service descriptions
 - Raw fingerprint display for unknown services
-- Web services with status codes and signatures
-- Additional notes and findings
+- Web services with status codes and technology signatures
+- **RF activity summary** with frequency identification and signal analysis
+- **Security assessments** for network targets
+- Enhanced scan metadata and findings
 
 ## Raw Fingerprint Feature
 
@@ -126,17 +163,28 @@ These fingerprints are invaluable for:
 
 ## Examples
 
-### Comprehensive Network Device Scan
+### Multi-Target Scanning Examples
 
 ```bash
-# Scan a router with full verbose output
-python -m fingerprinter --legal-ok 192.168.1.1 -vv
+# Network device with context
+python -m fingerprinter --legal-ok 192.168.1.1 \
+  --location 'Home Office' \
+  --note 'Monthly security audit' -vv
 
-# Output includes:
-# - Open ports with service detection
-# - Raw fingerprints for unidentified services
-# - HTTP services and web interfaces
-# - Device signatures and OS detection
+# RF spectrum survey
+python -m fingerprinter --legal-ok rf-weekly-check \
+  --location 'Data Center' \
+  --note 'Interference monitoring'
+
+# Geographic RF analysis
+python -m fingerprinter --legal-ok 37.7749,-122.4194 \
+  --target-type coordinates \
+  --location 'Golden Gate Park'
+
+# Combined network + RF analysis
+python -m fingerprinter --legal-ok 192.168.1.1 \
+  --location 'IoT Lab' \
+  --note 'Smart device investigation'
 ```
 
 ### JSON Output Structure
@@ -144,8 +192,12 @@ python -m fingerprinter --legal-ok 192.168.1.1 -vv
 ```json
 {
   "target": "192.168.1.1",
+  "target_type": "ip",
+  "scan_id": "192.168.1.1_20250629_120000",
   "started": "2025-06-28T20:46:27.937929",
   "finished": "2025-06-28T20:52:21.651566",
+  "location": "Home Lab",
+  "context_notes": ["Monthly security audit"],
   "ports": [
     {
       "port": 80,
@@ -165,10 +217,33 @@ python -m fingerprinter --legal-ok 192.168.1.1 -vv
       "signatures": ["lighttpd", "Router Interface"]
     }
   ],
+  "rf_scans": [
+    {
+      "center_freq_hz": 2450000000.0,
+      "sample_rate_hz": 10000000.0,
+      "bandwidth_hz": 100000000.0,
+      "gain_db": 30,
+      "hot_bins": [
+        {
+          "frequency_hz": 2437000000.0,
+          "power_db": -42.3,
+          "bandwidth_hz": 1000000.0,
+          "detection_method": "hackrf_sweep",
+          "timestamp": "2025-06-29T12:00:00"
+        }
+      ],
+      "scan_duration_sec": 8.0,
+      "noise_floor_db": -75.5,
+      "detection_threshold_db": -63.5
+    }
+  ],
   "notes": [
+    "Target type: ip",
+    "Scan location: Home Lab", 
+    "Ports discovered: 3 TCP",
+    "RF activity: 1 active frequencies across 1 ranges",
     "OS detected: Linux",
     "Device: Router Interface"
-  ]
 }
 ```
 
@@ -190,7 +265,8 @@ fingerprinter/
 │   ├── nmap.py          # nmap integration
 │   ├── http.py          # HTTP scanning
 │   ├── port.py          # Port scanning
-│   └── arp.py           # ARP scanning
+│   ├── arp.py           # ARP scanning
+│   └── hackrf.py        # RF spectrum analysis
 └── report/
     └── md.py            # Markdown reporting
 ```
@@ -207,6 +283,62 @@ fingerprinter/
 - `ScanReport`: Complete scan results container
 - `PortInfo`: Individual port/service information with raw fingerprints
 - `HttpInfo`: HTTP service details and signatures
+
+## HackRF RF Scanning Setup
+
+### Hardware Requirements
+- **HackRF One** SDR device
+- Appropriate **antenna** for target frequency ranges
+- USB connection to host computer
+
+### Software Installation
+
+```bash
+# Install HackRF command-line tools
+# Ubuntu/Debian:
+sudo apt install hackrf
+
+# Set up device permissions
+sudo usermod -a -G plugdev $USER
+# Then logout and login again
+
+# Verify device connection
+hackrf_info
+```
+
+### RF Scanning Usage
+
+```bash
+# Include RF scanning in full scan
+python -m fingerprinter --legal-ok 192.168.1.1
+
+# RF scanning only
+python -m fingerprinter --legal-ok -m hackrf 192.168.1.1
+
+# Quick RF scan (interactive mode)
+python -m fingerprinter --legal-ok --interactive -m hackrf 192.168.1.1
+```
+
+### Frequency Ranges Scanned
+
+- **433MHz ISM**: IoT devices, remote controls, sensors
+- **868MHz ISM**: European IoT devices 
+- **915MHz ISM**: US IoT devices, LoRa, Zigbee
+- **2.4GHz WiFi**: WiFi networks, Bluetooth devices
+- **5GHz WiFi**: Modern WiFi networks
+- **Cellular bands**: LTE, GSM signals
+
+### RF Output Example
+
+```
+INFO     Starting HackRF spectrum analysis
+INFO     Scanning wifi_2g4: 2400.0 - 2500.0 MHz
+INFO     Found 3 active frequencies in wifi_2g4
+INFO     Top active frequencies:
+INFO       1. 2437.000 MHz: -42.3 dB (WiFi Channel 6)
+INFO       2. 2462.000 MHz: -45.1 dB (WiFi Channel 11)
+INFO       3. 433.920 MHz: -55.8 dB (433MHz IoT Device)
+```
 
 ## Legal and Ethical Use
 
@@ -244,7 +376,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## TODO
 
-- [ ] Add support for hackrf frequency scan
+- [x] Add support for HackRF frequency scanning and hot bin detection
 - [ ] Interactive mode implementation
 - [ ] Raw fingerprint analysis and signature generation
 - [ ] Integration with vulnerability databases
