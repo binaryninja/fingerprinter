@@ -1,0 +1,15 @@
+[project]
+name = "fingerprinter"
+version = "0.1.0"
+description = "Google/Nest WiFi / OnHub fingerprinting tool"
+requires-python = ">=3.9"
+dependencies = [
+    "rich>=13",
+    "psutil>=5.9",
+    "aiohttp>=3.9",
+    "requests>=2.32",
+    "cryptography>=42"
+]
+
+[project.scripts]
+gwifi-fp = "fingerprinter.__main__:main"
